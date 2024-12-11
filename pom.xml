@@ -158,6 +158,8 @@
       <id>maven-snapshots</id>
       <name>maven-snapshots</name>
       <url>http://65.2.146.198:8081/repository/maven-snapshots/</url>
+      <username>admin</username>
+      <password>admin123</password>
     </snapshotRepository>
 </distributionManagement>
 
