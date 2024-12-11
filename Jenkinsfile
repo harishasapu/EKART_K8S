@@ -44,5 +44,30 @@ pipeline {
                }
             }
         }
+        stage("Docker Build & Push"){
+            steps{
+                script{
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker'){
+                        sh " docker build -t ekart ."
+                        sh " docker tag ekart harishasapu/ekart:latest "
+                        sh " docker push harishasapu/ekart:latest"
+                    }
+                }
+            }
+        }
+        stage("Trivy Image Scan"){
+            steps{
+                sh " trivy image harishasapu/ekart:latest > trivy-report.txt "
+            }
+        }
+        stage("Docker Deploy"){
+            steps{
+                script{
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker'){
+                        sh " docker run -d --name ekart1 -p 8070:8070 harishasapu/ekart:latest"
+                    }
+                }
+            }
+        }
     }
 }
