@@ -7,14 +7,18 @@ pipeline {
     environment{
         SCANNER_HOME= tool 'sonar-scanner'
     }
-
-    stages {
-        stage('Gitcheckout') {
+    stages{
+        stage('clean workspace'){
+            steps{
+                cleanWs()
+            }
+        }
+        stage('Gitcheckout'){
             steps {
                 git branch: 'main', changelog: false, poll: false, url: 'https://github.com/harishasapu/EKART_K8S.git'
             }
         }
-        stage('Compile') {
+        stage('Compile'){
             steps {
                 sh "mvn compile"
             }
@@ -26,48 +30,64 @@ pipeline {
                 }
             }
         }
-        stage('OWASP FS SCAN') {
-            steps {
-                dependencyCheck additionalArguments: '--scan ./app/backend --disableYarnAudit --disableNodeAudit', odcInstallation: 'DC'
-                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+        stage("quality gate"){
+           steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-cred'
+                }
             }
         }
-        stage('TRIVY FS SCAN') {
+        stage('OWASP FS SCAN'){
             steps {
-                sh "trivy fs ."
+                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DC'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
-        stage('Deploy To Nexus') {
+        stage('TRIVY FS SCAN'){
             steps {
-               withMaven(globalMavenSettingsConfig: 'mavenglobal', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true){                     
-                sh " mvn deploy -DskipTests=true"
-               }
+                sh "trivy fs . > trivyfs.txt"
             }
         }
-        stage("Docker Build & Push"){
+        stage('Deploy To Nexus'){
+            steps{
+                withMaven(globalMavenSettingsConfig: 'mysettings', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true){
+                    sh " mvn deploy -DskipTests=true"
+                }
+            }
+        }
+         stage("Docker Build & Push"){
             steps{
                 script{
-                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker'){
-                        sh " docker build -t ekart ."
-                        sh " docker tag ekart harishasapu/ekart:latest "
-                        sh " docker push harishasapu/ekart:latest"
+                   withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker'){   
+                       sh "docker build -t ekart ."
+                       sh "docker tag ekart harishasapu/ekart:latest"
+                       sh "docker push harishasapu/ekart:latest"
                     }
                 }
             }
         }
-        stage("Trivy Image Scan"){
+        stage("TRIVY"){
             steps{
-                sh " trivy image harishasapu/ekart:latest > trivy-report.txt "
+                 sh " trivy image --format table harishasapu/ekart:latest "
             }
         }
         stage("Docker Deploy"){
             steps{
+                sh " docker run -d --name ekart -p 8070:8070 harishasapu/ekart:latest"
+            }
+        }
+        stage("Kubernetes Deploy"){
+            steps{
                 script{
-                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker'){
-                        sh " docker run -d --name ekart1 -p 8070:8070 harishasapu/ekart:latest"
+                    withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8s-cred', namespace: '', restrictKubeConfigAccess: false, serverUrl: ''){
+                        sh "kubectl apply -f deploymentservice.yml"  
                     }
                 }
             }
         }
     }
 }
+
+
+    
+    
